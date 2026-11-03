@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Presse & inondations – SPC LACI</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{color-scheme:light;--bg:#f4f6f8;--panel:#fff;--txt:#1b2733;--mut:#5c6b7a;--bord:#c9d2db;--accent:#0a5cad;--fr:#e6eaee;--ctr:#0a5cad;--sel:#e07b00;--c0:#dfe6ec;--c1:#bcd7f0;--c2:#7fb2e0;--c3:#3a82c7;--c4:#0b4f94}
+[data-theme=dark]{color-scheme:dark;--bg:#0f1720;--panel:#17212c;--txt:#e6edf3;--mut:#93a4b5;--bord:#34455a;--accent:#5aa9ff;--fr:#1b2733;--ctr:#5aa9ff;--sel:#ffb347;--c0:#243242;--c1:#1d4a73;--c2:#2a6fae;--c3:#4a95d6;--c4:#8cc4f5}
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column}
+header,footer{padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--bord);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;flex:1}header span,footer{color:var(--mut);font-size:12px}footer{border:0;border-top:1px solid var(--bord)}
+main{flex:1;display:grid;grid-template-columns:370px 1fr;min-height:0}
+aside{padding:12px;overflow:auto;background:var(--panel);border-right:1px solid var(--bord);display:flex;flex-direction:column;gap:8px}
+#map{background:var(--bg)}
+input,button{font:inherit;padding:6px 8px;border:1px solid var(--bord);border-radius:6px;background:var(--bg);color:var(--txt)}
+button{cursor:pointer}label{display:block;color:var(--mut);font-size:12px}label input{width:100%}
+.row{display:flex;gap:8px}.row>*{flex:1}#info{margin:0;font-weight:600}
+#leg{font-size:12px;color:var(--mut)}#leg i{display:inline-block;width:14px;height:14px;margin:0 3px 0 8px;vertical-align:middle;border:1px solid var(--bord)}
+article{padding:8px 0;border-bottom:1px solid var(--bord);display:flex;flex-direction:column;gap:2px}
+article a{color:var(--accent);text-decoration:none}small{color:var(--mut)}
+@media(max-width:800px){main{grid-template-columns:1fr;grid-template-rows:55vh 1fr}#map{order:-1}}
+</style></head><body>
+<header><h1>Presse & inondations <small>· territoire SPC LACI</small></h1><span id="maj"></span><button id="th">◐ Thème</button></header>
+<main>
+<aside>
+<label>Commune <input id="q" list="dl" placeholder="Nom de commune… ou clic sur la carte"></label><datalist id="dl"></datalist>
+<div class="row"><label>Du <input type="date" id="d1"></label><label>Au <input type="date" id="d2"></label></div>
+<div class="row"><button id="rz">Réinitialiser</button><button id="ex">Exporter CSV</button></div>
+<div id="leg"></div><p id="info">Chargement…</p><div id="list"></div>
+</aside>
+<div id="map"></div>
+</main>
+<footer id="ft"></footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+const $=i=>document.getElementById(i),R=document.documentElement,css=n=>getComputedStyle(R).getPropertyValue(n).trim();
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let ART=[],META={},sel=null,LY={},NOM={},LAB={},SHOWN=[],FR,CT,map;
+function setTheme(t){R.dataset.theme=t;try{localStorage.setItem('th',t)}catch(e){}if(map&&FR)paint()}
+let t0;try{t0=localStorage.getItem('th')}catch(e){}
+setTheme(t0||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));
+$('th').onclick=()=>setTheme(R.dataset.theme=='dark'?'light':'dark');
+map=L.map('map',{preferCanvas:true,zoomSnap:.25,attributionControl:false});
+const J=u=>fetch(u).then(r=>r.json());
+Promise.all([J('data/contour_france.geojson'),J('data/contour_spclaci.geojson'),J('data/communes_spclaci.geojson'),fetch('data/articles.csv').then(r=>r.text()),J('data/meta.json')]).then(([fr,ct,cm,csv,meta])=>{
+ META=meta;
+ ART=Papa.parse(csv,{header:true,skipEmptyLines:true}).data.map(a=>({...a,j:a.date.slice(0,10),ids:a.insee.split('|').filter(Boolean)}));
+ FR=L.geoJSON(fr,{interactive:false}).addTo(map);
+ const C=L.geoJSON(cm,{onEachFeature:(f,l)=>{const p=f.properties;LY[p.INSEE_COM]=l;NOM[p.INSEE_COM]=p.NOM;
+  LAB[`${p.NOM} (${p.INSEE_DEP})`]=p.INSEE_COM;l.bindTooltip(p.NOM,{sticky:true});
+  l.on('click',e=>{L.DomEvent.stopPropagation(e);choose(p.INSEE_COM)})}}).addTo(map);
+ CT=L.geoJSON(ct,{interactive:false}).addTo(map);
+ $('dl').innerHTML=Object.keys(LAB).sort().map(k=>`<option value="${esc(k)}">`).join('');
+ map.fitBounds(C.getBounds());map.on('click',()=>choose(null));
+ $('d1').value=$('d1').min=$('d2').min=META.debut;$('d2').value=$('d1').max=$('d2').max=META.fin;
+ $('maj').textContent='Données mises à jour le '+new Date(META.maj).toLocaleString('fr-FR');
+ $('ft').textContent=`Période collectée : ${META.debut} → ${META.fin} · Page modifiée le ${new Date(document.lastModified).toLocaleDateString('fr-FR')} · Source : Google Actualités (titre, média, lien). Rattachement aux communes d'après le titre : non vérifié.`;
+ $('leg').innerHTML='Articles :'+['0','1','2–3','4–7','8+'].map((l,k)=>`<i style="background:var(--c${k})"></i>${l}`).join('');
+ paint();
+}).catch(e=>$('info').textContent='Erreur de chargement des données : '+e);
+function choose(i){sel=i;$('q').value=i?`${NOM[i]} (${LY[i].feature.properties.INSEE_DEP})`:'';paint()}
+$('q').onchange=e=>choose(LAB[e.target.value]||null);
+['d1','d2'].forEach(i=>$(i).onchange=paint);
+$('rz').onclick=()=>{$('d1').value=META.debut;$('d2').value=META.fin;choose(null)};
+function paint(){
+ const A=ART.filter(a=>a.j>=$('d1').value&&a.j<=$('d2').value),cnt={};
+ A.forEach(a=>a.ids.forEach(i=>cnt[i]=(cnt[i]||0)+1));
+ FR.setStyle({fillColor:css('--fr'),fillOpacity:1,color:css('--bord'),weight:1});
+ CT.setStyle({color:css('--ctr'),weight:2,fill:false});
+ const pal=[0,1,2,3,4].map(k=>css('--c'+k));
+ for(const i in LY){const n=cnt[i]||0,s=i===sel;
+  LY[i].setStyle({fillColor:pal[n?n<2?1:n<4?2:n<8?3:4:0],fillOpacity:1,color:s?css('--sel'):css('--bord'),weight:s?3:.5});
+  if(s)LY[i].bringToFront()}
+ CT.bringToFront();
+ const F=SHOWN=sel?A.filter(a=>a.ids.includes(sel)):A;
+ $('info').textContent=`${F.length} article(s)`+(sel?` · ${NOM[sel]}`:` · ${Object.keys(cnt).length} commune(s) concernée(s)`);
+ $('list').innerHTML=F.map(a=>`<article><small>${a.j.split('-').reverse().join('/')} · ${esc(a.media)}</small><a href="${esc(a.lien)}" target="_blank" rel="noopener">${esc(a.titre)}</a><small>${esc(a.communes.split('|').join(', '))}${a.ambigu=='1'?' ⚠ homonymes possibles':''}</small></article>`).join('')||'<p>Aucun article.</p>';
+}
+$('ex').onclick=()=>{const q=v=>'"'+String(v).replace(/"/g,'""')+'"',
+ rows=[['date','media','titre','lien','communes'],...SHOWN.map(a=>[a.date,a.media,a.titre,a.lien,a.communes.split('|').join(', ')])],
+ u=document.createElement('a');
+ u.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv'}));
+ u.download='articles_presse.csv';u.click()};
+</script></body></html>
